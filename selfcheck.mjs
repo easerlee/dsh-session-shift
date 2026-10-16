@@ -111,7 +111,7 @@ try {
   if (!body.startsWith('# 交接包')) throw new Error('交接包内容不对')
   if (!/接线自检/.test(body)) throw new Error('交接包没带上 reason')
   if (wired.newTitle.indexOf('自检标题') !== 0) throw new Error('标题没从 sessionTitle.get() 的 snapshot.title 读到（旧会话也就不会被加 [已交接]）：' + wired.newTitle)
-  if (!/^自检标题（接 \d{2}-\d{2}）$/.test(wired.newTitle)) throw new Error('标题没剥掉上一轮的「（接 HH-MM）」或时间戳不是本地 HH-MM：' + wired.newTitle)
+  if (wired.newTitle !== '自检标题（接 1）') throw new Error('新会话标题不是「原标题（接 编号）」：' + wired.newTitle)
   // 文件清单：真路径要在，垃圾条目一个都不能有
   const listed = (body.match(/## 改动过的文件[\s\S]*?(?=\n## )/) || [''])[0]
     .split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2))
@@ -264,6 +264,79 @@ try {
   if (createdCount !== 1) throw new Error('cooldownMs=0 时同一个会话被交接了 ' + createdCount + ' 次（应为 1 次）')
   if (onceSnap.doneSkips < 2) throw new Error('后续 pre-step 没被终态拦下（doneSkips=' + onceSnap.doneSkips + '）')
   console.log('只交接一次 ok: 同一会话 3 次 pre-step → 建了 ' + createdCount + ' 个新会话，拦下 ' + onceSnap.doneSkips + ' 次')
+
+  // ── 交接标题：① 编号递增、不叠括号 ② 交接后停老会话那一轮 ③ 被运行环境自动起名覆盖后写回 ──
+  const titleDir = mkdtempSync(join(tmpdir(), 'dsh-session-shift-title-'))
+  const squeezeEvents = () => [
+    { type: 'compaction/summary', data: { summary: '一' } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '待办' }] } },
+    { type: 'compaction/summary', data: { summary: '二' } },
+  ]
+  const makeTitleCtx = (oldTitle) => {
+    const rec = { renames: [], stops: [], created: 0, newTitleVal: '', step: null, stopping: null, tool: null, newSessionId: '' }
+    rec.session = { id: 'session-title-old', snapshotEvents: squeezeEvents }
+    rec.ctx = {
+      logger: { info() {}, warn() {}, error() {} },
+      connection: { fetch: { register() {} } },
+      tools: { register(t) { rec.tool = t } },
+      parallel: async (name, payload) => { rec.stops.push([name, payload && payload.sessionId]) },
+      on(name, fn) { if (name === 'agent/pre-step') rec.step = fn; if (name === 'agent/turn-stopping') rec.stopping = fn },
+      sessionTitle: {
+        get: (s) => (s && s.id === rec.newSessionId ? (rec.newTitleVal || oldTitle) : oldTitle),
+        rename(s, t) { rec.renames.push([s && s.id, t]); if (s && s.id === rec.newSessionId) rec.newTitleVal = t },
+      },
+      sessionProjections: { stateOf: () => ({ surfaceTokens: 10, contextWindow: 1000 }) },
+      agentPresets: { resolve: async () => ({ id: 'default' }), mount: async () => {} },
+      permissionPresets: { defaultPreset: '', resolve() {}, set() {} },
+      agentDefaultModel: { currentSelection: () => undefined },
+      workspaceRegistry: { create: async (cwd) => ({ path: cwd, attachSession: async () => {}, detachSession: async () => {} }) },
+      agents: {
+        create: async (opts) => {
+          rec.created += 1
+          rec.newSessionId = (opts && opts.sessionId) || 'session-new'
+          return { agent: { session: { id: rec.newSessionId }, followup() {} }, dispose: async () => {} }
+        },
+      },
+    }
+    return rec
+  }
+  // ① 编号规则：走 dryRun（手动路径，不受「已交接」终态限制）
+  const titleCases = [
+    ['dsh-handoff（接 03-57） (1) [已交接]', 'dsh-handoff（接 2）'],
+    ['codex额度工具', 'codex额度工具（接 1）'],
+    ['标题（接 4）', '标题（接 5）'],
+    ['', '会话交接（接 1）'],
+  ]
+  for (const [oldT, want] of titleCases) {
+    const rec = makeTitleCtx(oldT)
+    await mod.apply(rec.ctx, { enabled: true, handoffDir: titleDir, cooldownMs: 0 })
+    const out = await rec.tool.execute({ reason: '标题自检', dryRun: true }, { agent: { session: rec.session }, cwd: titleDir })
+    if (out.newTitle !== want) throw new Error('标题编号不对：旧「' + oldT + '」→「' + out.newTitle + '」（应为「' + want + '」）')
+  }
+  // ②③ 真跑一次（旧标题不含 [已交接]，才会被触发）：停老会话那一轮 + 新会话标题被覆盖后写回
+  {
+    const rec = makeTitleCtx('codex额度工具')
+    await mod.apply(rec.ctx, { enabled: true, maxCompactions: 2, thresholdRatio: 0.99, handoffDir: titleDir, cooldownMs: 0 })
+    await rec.step({ agent: { session: rec.session }, signal: { aborted: false } }, async () => {})
+    for (let i = 0; i < 80 && rec.newTitleVal === ''; i += 1) await new Promise((r) => setTimeout(r, 50))
+    if (rec.newTitleVal !== 'codex额度工具（接 1）') throw new Error('交接没建出「（接 1）」标题的新会话：' + rec.newTitleVal)
+    if (rec.created !== 1) throw new Error('交接没有建新会话：' + rec.created)
+    if (!rec.stops.some(([n, id]) => n === 'workspace/session-stop' && id === 'session-title-old')) {
+      throw new Error('交接后没有停掉老会话那一轮（stops=' + JSON.stringify(rec.stops) + '）')
+    }
+    rec.newTitleVal = '被自动起名覆盖'
+    await rec.step({ agent: { session: { id: rec.newSessionId, snapshotEvents: () => [] } }, signal: { aborted: false } }, async () => {})
+    if (rec.newTitleVal !== 'codex额度工具（接 1）') throw new Error('第一步没写回标题：' + rec.newTitleVal)
+    rec.newTitleVal = '又被覆盖'
+    if (rec.stopping) await rec.stopping({ agent: { session: { id: rec.newSessionId } } })
+    if (rec.newTitleVal !== 'codex额度工具（接 1）') throw new Error('turn-stopping 没写回标题：' + rec.newTitleVal)
+    if (rec.stopping) {
+      rec.newTitleVal = '第三次覆盖'
+      await rec.stopping({ agent: { session: { id: rec.newSessionId } } })
+      if (rec.newTitleVal !== '第三次覆盖') throw new Error('第一轮结束后还在抢标题（应当只写回一次，之后你自己改的名字不能被改回去）')
+    }
+  }
+  console.log('交接标题 ok: 编号递增不叠括号（含时间戳式旧标题、空标题）；交接后已停老会话那一轮；被自动起名覆盖后写回一次且不再抢')
 
   // ── 终态要能跨重启：标题里已经有 [已交接] 的会话，重启后也不许再自动交接 ──
   // （内存里的 doneBySession 重启就没了；标题是插件自己加的，落盘在那儿。）

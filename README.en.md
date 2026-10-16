@@ -163,6 +163,12 @@ sessions all doing the same work. A session that has been handed off is remember
 `[已交接]` marker in its title, so it survives a DSH restart). To let it hand off again, remove
 `[已交接]` from the title; `handoff_now` is always available manually.
 
+### What happens when a handoff actually fires (in this order)
+
+1. **The package is written to disk first** (`.dsh/handoff/`) — nothing else is touched until that succeeded, so no work is lost
+2. **The new session's title**: `原标题（接 N）`, where N is **the highest number in the old title + 1**; legacy `（接 02-15）`-style time suffixes are replaced by the number, and you never get stacked parentheses. The runtime also auto-titles sessions from their content (which overwrites ours), so the plugin writes its title back once before the new session's first turn ends and then leaves it alone — **your own rename is never taken back**
+3. **The old session**: its title gets ` [已交接]`, and **its running turn is stopped** (see `stopOldSession`). Without that stop it keeps working while the new session works from the same package, and both edit the same files
+
 ## Configuration
 
 In the profile's `cordis.patch.yml`:
@@ -192,6 +198,7 @@ In the profile's `cordis.patch.yml`:
 | `maxChars` | `24000` | Character cap for the package; the remainder is budgeted to the two message windows, and the older ones are dropped first |
 | `renameOldSuffix` | ` [已交接]` | Suffix appended to the old session's title |
 | `dryRun` | `false` | **true = write the package only, create no session** (useful for a first check) |
+| `stopOldSession` | `true` | After a handoff, **stop the old session's running turn** (via the harness's `workspace/session-stop`, the same path as the UI's stop button; nothing is archived or deleted). Set `false` to let the old session keep running |
 
 ⚠️ A patch `config` **replaces the whole block** — when overriding, repeat every key you don't want to change.
 
