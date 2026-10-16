@@ -1,0 +1,60 @@
+# 推一个 v* tag → 自动发布到 npm（Trusted Publishing / OIDC，不存任何长期 token）
+#
+# 一次性配置（在 npm 网站上做一次）：
+#   npmjs.com → 打开包 dsh-session-shift → Settings → Trusted Publisher
+#   → 选 GitHub Actions，填：Organization or user = easerlee，Repository = dsh-session-shift，
+#     Workflow filename = publish.yml，Environment 留空
+# 配好之后，发版的全部动作就是：改 package.json 的 version → git tag vX.Y.Z → git push origin vX.Y.Z
+
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # 想手动补发（或验证）时用：Actions → publish → Run workflow，填一个已存在的 tag
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 要发布的 tag（例如 v0.2.5）
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # Trusted Publishing 靠它换 OIDC 身份，缺这条会被 npm 拒
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # Trusted Publishing 要求 npm CLI ≥ 11.5.1（Node 22 自带的是 10.x，所以要升）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm install -g npm@latest
+
+      - name: 语法检查
+        run: node --check lib/index.js
+
+      - name: 校验 tag 与 package.json 版本一致
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ github.event.inputs.ref }}"; TAG="${TAG#v}"; fi
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG  package.json=$PKG"
+          [ "$TAG" = "$PKG" ] || { echo "::error::tag v$TAG 与 package.json 的 $PKG 不一致，先对齐再发"; exit 1; }
+
+      - name: 发布
+        run: npm publish
+        # 故意不设 NODE_AUTH_TOKEN：Trusted Publishing 用 OIDC 换一次性凭证，
+        # 并在发布时自动生成 provenance（构建来源证明）。
