@@ -217,6 +217,78 @@ try {
   if (!/触发原因：auto: 本会话已被压缩 2 次/.test(squeezedBody)) throw new Error('交接包的触发原因不是压缩次数：' + squeezedBody.split('\n')[3])
   console.log('压缩触发 ok: ' + squeezedBody.split('\n')[3] + ' → ' + auto.filePath)
 
+  // ── 重复触发：同一个会话只能自动交接一次 ──
+  // 交接不清空老会话的上下文，所以 due 一旦为真就永远为真（「已压缩 ≥ N 次」只会越数越多）。
+  // 没有终态时，唯一拦住重复的就是 cooldown —— cooldownMs=0 时会被交接 3 次、开出 3 个会话。
+  const onceDir = mkdtempSync(join(tmpdir(), 'dsh-session-shift-once-'))
+  let preStep2 = null
+  const routes2 = new Map()
+  let createdCount = 0
+  const onceCtx = {
+    logger: { info() {}, warn() {}, error() {} },
+    connection: { fetch: { register(route) { routes2.set(route.path, route) } } },
+    tools: { register() {} },
+    on(name, fn) { if (name === 'agent/pre-step') preStep2 = fn },
+    sessionTitle: { get: () => '原标题', rename() {} },
+    sessionProjections: { stateOf: () => ({ surfaceTokens: 10, contextWindow: 1000 }) },
+    agentPresets: { resolve: async () => ({ id: 'default' }), mount: async () => {} },
+    permissionPresets: { defaultPreset: '', resolve() {}, set() {} },
+    agentDefaultModel: { currentSelection: () => undefined },
+    workspaceRegistry: { create: async (cwd) => ({ path: cwd, attachSession: async () => {}, detachSession: async () => {} }) },
+    agents: { create: async () => { createdCount += 1; return { agent: { session: { id: 'session-new' }, followup() {} }, dispose: async () => {} } } },
+  }
+  await mod.apply(onceCtx, { enabled: true, maxCompactions: 2, thresholdRatio: 0.99, handoffDir: onceDir, cooldownMs: 0 })
+  if (!preStep2) throw new Error('apply（重复触发用例）没挂 agent/pre-step')
+  const repeated = {
+    id: 'session-squeezed-again',
+    snapshotEvents: () => [
+      { type: 'compaction/summary', data: { summary: '压缩一' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: '待办' }] } },
+      { type: 'compaction/summary', data: { summary: '压缩二' } },
+    ],
+  }
+  const onceStatus = routes2.get('/api/handoff/status')
+  if (!onceStatus) throw new Error('重复触发用例没注册 /api/handoff/status')
+  await preStep2({ agent: { session: repeated }, signal: { aborted: false } }, async () => {})
+  let onceSnap = null
+  for (let i = 0; i < 80; i += 1) {
+    onceSnap = await (await onceStatus.fetch()).json()
+    if (onceSnap.doneSessions.includes(repeated.id)) break
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  if (!onceSnap.doneSessions.includes(repeated.id)) throw new Error('交接成功后没落终态（doneSessions=' + JSON.stringify(onceSnap.doneSessions) + '）')
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  await preStep2({ agent: { session: repeated }, signal: { aborted: false } }, async () => {})
+  await preStep2({ agent: { session: repeated }, signal: { aborted: false } }, async () => {})
+  onceSnap = await (await onceStatus.fetch()).json()
+  if (createdCount !== 1) throw new Error('cooldownMs=0 时同一个会话被交接了 ' + createdCount + ' 次（应为 1 次）')
+  if (onceSnap.doneSkips < 2) throw new Error('后续 pre-step 没被终态拦下（doneSkips=' + onceSnap.doneSkips + '）')
+  console.log('只交接一次 ok: 同一会话 3 次 pre-step → 建了 ' + createdCount + ' 个新会话，拦下 ' + onceSnap.doneSkips + ' 次')
+
+  // ── 终态要能跨重启：标题里已经有 [已交接] 的会话，重启后也不许再自动交接 ──
+  // （内存里的 doneBySession 重启就没了；标题是插件自己加的，落盘在那儿。）
+  let preStep3 = null
+  let createdCount3 = 0
+  const titledCtx = {
+    logger: { info() {}, warn() {}, error() {} },
+    connection: { fetch: { register() {} } },
+    tools: { register() {} },
+    on(name, fn) { if (name === 'agent/pre-step') preStep3 = fn },
+    sessionTitle: { get: () => '原标题' + ' [已交接]', rename() {} },
+    sessionProjections: { stateOf: () => ({ surfaceTokens: 10, contextWindow: 1000 }) },
+    agentPresets: { resolve: async () => ({ id: 'default' }), mount: async () => {} },
+    permissionPresets: { defaultPreset: '', resolve() {}, set() {} },
+    agentDefaultModel: { currentSelection: () => undefined },
+    workspaceRegistry: { create: async (cwd) => ({ path: cwd, attachSession: async () => {}, detachSession: async () => {} }) },
+    agents: { create: async () => { createdCount3 += 1; return { agent: { session: { id: 'session-new-3' }, followup() {} }, dispose: async () => {} } } },
+  }
+  await mod.apply(titledCtx, { enabled: true, maxCompactions: 2, thresholdRatio: 0.99, handoffDir: onceDir, cooldownMs: 0 })
+  if (!preStep3) throw new Error('apply（标题终态用例）没挂 agent/pre-step')
+  await preStep3({ agent: { session: { id: 'session-already-handed', snapshotEvents: repeated.snapshotEvents } }, signal: { aborted: false } }, async () => {})
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  if (createdCount3 !== 0) throw new Error('标题已带 [已交接] 的会话又被自动交接了 ' + createdCount3 + ' 次（重启后会复发）')
+  console.log('标题终态 ok: 标题带 [已交接] 的会话不触发（跨重启有效）')
+
   // ── 事件改名的静默失败：有 compaction/start、但一次 summary 都没数到 → 不许触发，且必须告警 ──
   const renamed = {
     id: 'session-renamed',

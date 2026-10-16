@@ -147,13 +147,21 @@ API calls are rejected before that). The desktop app has no address bar; trigger
 
 ### Automatic
 
-A handoff fires once `cooldownMs` has elapsed and either condition holds:
+**A session is handed off automatically only once.** It fires when `cooldownMs` has elapsed and either
+condition holds:
 
 - pressure has reached `thresholdRatio`
 - **this session has been compacted `maxCompactions` times** (default 2)
 
 The second one matters: compaction always pushes pressure back below its own threshold, so a
 pressure-only trigger never gets its chance. How the two get along is below.
+
+"Only once" matters too: a handoff **does not clear the old session's context**, so once the condition
+holds it holds forever (the compaction count only grows). With nothing but `cooldownMs` in the way, an old
+session handed off again every 5 minutes and opened a fresh session each time — ending with several
+sessions all doing the same work. A session that has been handed off is remembered (in memory, plus the
+`[已交接]` marker in its title, so it survives a DSH restart). To let it hand off again, remove
+`[已交接]` from the title; `handoff_now` is always available manually.
 
 ## Configuration
 
@@ -178,7 +186,7 @@ In the profile's `cordis.patch.yml`:
 | `enabled` | `true` | When off, only the HTTP endpoints and the tool remain, no automatic handoff |
 | `thresholdRatio` | `0.6` | Pressure ratio that triggers a handoff (0.6 = 60%); raise it when running alongside compaction, see below |
 | `maxCompactions` | `2` | Hand off after this many compactions of the session (`0` = pressure only) |
-| `cooldownMs` | `300000` | Minimum gap between two handoffs of the same session |
+| `cooldownMs` | `300000` | Minimum gap between two handoffs of the same session (auto handoff is once per session anyway; this mainly throttles `dryRun` previews) |
 | `handoffDir` | `.dsh/handoff` | Where packages are written (relative to the workspace; absolute works too) |
 | `recentMessages` | `14` | How many user messages the user-message section carries (each clipped to 400 chars) |
 | `maxChars` | `24000` | Character cap for the package; the remainder is budgeted to the two message windows, and the older ones are dropped first |
