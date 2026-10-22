@@ -336,7 +336,27 @@ try {
       if (rec.newTitleVal !== '第三次覆盖') throw new Error('第一轮结束后还在抢标题（应当只写回一次，之后你自己改的名字不能被改回去）')
     }
   }
-  console.log('交接标题 ok: 编号递增不叠括号（含时间戳式旧标题、空标题）；交接后已停老会话那一轮；被自动起名覆盖后写回一次且不再抢')
+  // ④ 刚起的一轮不叫停（否则吞掉人刚发出的消息）；⑤ 拖久了的一轮照停
+  const stopCase = async (id, turnAgeMs, wantStops, label) => {
+    const rec = makeTitleCtx('codex额度工具')
+    rec.session = {
+      id,
+      snapshotEvents: () => [
+        { type: 'compaction/summary', data: { summary: '一' } },
+        { type: 'compaction/summary', data: { summary: '二' } },
+        { type: 'turn/start', time: Date.now() - turnAgeMs },
+      ],
+    }
+    await mod.apply(rec.ctx, { enabled: true, maxCompactions: 2, thresholdRatio: 0.99, handoffDir: titleDir, cooldownMs: 0 })
+    // 走工具路径：execute 会 await 整个交接；自动交接那条是 fire-and-forget，断言会撞上时序
+    const out = await rec.tool.execute({ reason: '停止行为自检' }, { agent: { session: rec.session }, cwd: titleDir })
+    if (!out.ok) throw new Error(label + '：交接失败（' + out.error + '）')
+    const stopped = rec.stops.some(([n, sid]) => n === 'workspace/session-stop' && sid === id)
+    if (stopped !== wantStops) throw new Error(label + '：停止行为不对（stops=' + JSON.stringify(rec.stops) + '）')
+  }
+  await stopCase('session-live-turn', 300, false, '刚起的一轮')
+  await stopCase('session-stale-turn', 10 * 60 * 1000, true, '拖了很久的一轮')
+  console.log('交接标题 ok: 编号递增不叠括号（含时间戳式旧标题、空标题）；交接后已停老会话那一轮；刚起的一轮不叫停；被自动起名覆盖后写回一次且不再抢')
 
   // ── 终态要能跨重启：标题里已经有 [已交接] 的会话，重启后也不许再自动交接 ──
   // （内存里的 doneBySession 重启就没了；标题是插件自己加的，落盘在那儿。）

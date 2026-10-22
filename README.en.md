@@ -167,7 +167,7 @@ sessions all doing the same work. A session that has been handed off is remember
 
 1. **The package is written to disk first** (`.dsh/handoff/`) — nothing else is touched until that succeeded, so no work is lost
 2. **The new session's title**: `原标题（接 N）`, where N is **the highest number in the old title + 1**; legacy `（接 02-15）`-style time suffixes are replaced by the number, and you never get stacked parentheses. The runtime also auto-titles sessions from their content (which overwrites ours), so the plugin writes its title back once before the new session's first turn ends and then leaves it alone — **your own rename is never taken back**
-3. **The old session**: its title gets ` [已交接]`, and **its running turn is stopped** (see `stopOldSession`). Without that stop it keeps working while the new session works from the same package, and both edit the same files
+3. **The old session**: its title gets ` [已交接]`, and **its running turn is stopped** (see `stopOldSession`). Without that stop it keeps working while the new session works from the same package, and both edit the same files. **Exception: if that turn has only just started (within `liveGraceMs`, 60s by default) it is left alone** — that means someone just spoke and is waiting for an answer, and stopping it would swallow the question
 
 ## Configuration
 
@@ -199,6 +199,7 @@ In the profile's `cordis.patch.yml`:
 | `renameOldSuffix` | ` [已交接]` | Suffix appended to the old session's title |
 | `dryRun` | `false` | **true = write the package only, create no session** (useful for a first check) |
 | `stopOldSession` | `true` | After a handoff, **stop the old session's running turn** (via the harness's `workspace/session-stop`, the same path as the UI's stop button; nothing is archived or deleted). Set `false` to let the old session keep running |
+| `liveGraceMs` | `60000` | Skip that stop when the old session's current turn **started less than this long ago** (ms): someone most likely just spoke and is waiting for an answer, and stopping would swallow the question. Long-running turns are still stopped |
 
 ⚠️ A patch `config` **replaces the whole block** — when overriding, repeat every key you don't want to change.
 
