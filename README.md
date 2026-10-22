@@ -74,8 +74,8 @@ dsh plugin --profile web add github:easerlee/dsh-session-shift
 
 装完**重启对应的那一端**——bundle 列表只在启动时读一次。其余：
 
-- **从 GitHub 装**：`add github:easerlee/dsh-session-shift`。更新只走 GitHub Release，npm 那条线已停用
-- npm 上停在 `0.2.5`，不再发新版本；`add dsh-session-shift` 装到的就是 0.2.5
+- npm 包名是 `dsh-session-shift`，推 `v*` tag 由 GitHub Actions 自动发布
+- 也可以从仓库装：`add github:easerlee/dsh-session-shift`（每次装都拉仓库）
 - 一条命令会同时把包写进 profile 的 `dependencies` 和 `dsh.profile.bundles`，不用手动改文件
 
 确认挂上了（web 端 / 命令行）：

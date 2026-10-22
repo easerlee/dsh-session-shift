@@ -1,15 +1,13 @@
-# 手动发一次 npm（Trusted Publishing / OIDC，不存任何长期 token）
+# 推一个 v* tag → 自动发布到 npm（Trusted Publishing / OIDC，不存任何长期 token）
 #
-# 自动发布已停用（2026-10-22）：推 tag 不再触发发布，更新只走 GitHub Release + 仓库源码。
-# 要恢复自动发布：把下面 on: 里注释掉的 push trigger 解除注释即可。
-# 手动补发：Actions → publish → Run workflow，填一个已存在的 tag
+# 手动补发（或验证）：Actions → publish → Run workflow，填一个已存在的 tag
 
 name: publish
 
 on:
-  # push:
-  #   tags:
-  #     - 'v*'
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       ref:

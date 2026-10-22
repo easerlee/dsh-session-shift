@@ -86,9 +86,8 @@ dsh plugin --profile web add github:easerlee/dsh-session-shift
 
 Then **restart the side you installed into** — the bundle list is read once at startup. Also:
 
-- **Install from GitHub**: `add github:easerlee/dsh-session-shift`. Updates ship through GitHub releases
-  only — the npm publishing path is retired
-- npm stays at `0.2.5` and gets no new versions; `add dsh-session-shift` installs exactly that
+- The npm package is `dsh-session-shift`; pushing a `v*` tag publishes it through GitHub Actions
+- You can also install from the repo: `add github:easerlee/dsh-session-shift` (pulled fresh each time)
 - The command writes the package into the profile's `dependencies` *and* `dsh.profile.bundles`, so no
   manual file editing is needed
 
