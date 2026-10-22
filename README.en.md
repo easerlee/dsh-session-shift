@@ -74,7 +74,7 @@ Two things static scanners tend to misread, spelled out:
 ### `dsh web` (profile `web`)
 
 ```bash
-dsh plugin --profile web add dsh-session-shift
+dsh plugin --profile web add github:easerlee/dsh-session-shift
 ```
 
 - The `web` profile **initializes itself on first use** — no manual setup; it lives at
@@ -86,10 +86,11 @@ dsh plugin --profile web add dsh-session-shift
 
 Then **restart the side you installed into** — the bundle list is read once at startup. Also:
 
-- The npm package is `dsh-session-shift`
+- **Install from GitHub**: `add github:easerlee/dsh-session-shift`. Updates ship through GitHub releases
+  only — the npm publishing path is retired
+- npm stays at `0.2.5` and gets no new versions; `add dsh-session-shift` installs exactly that
 - The command writes the package into the profile's `dependencies` *and* `dsh.profile.bundles`, so no
   manual file editing is needed
-- Without npm: `add github:easerlee/dsh-session-shift` (same code, just pulled from the repo each time)
 
 Check it is live (web / CLI):
 

@@ -63,7 +63,7 @@ DSH 插件：上下文压力到阈值时，把当前工作**交接给一个新�
 ### web 端（profile `web`）
 
 ```bash
-dsh plugin --profile web add dsh-session-shift
+dsh plugin --profile web add github:easerlee/dsh-session-shift
 ```
 
 - `web` profile **首次使用时自动初始化**，不用手工建；目录是 `$DSH_HOME/profiles/web`
@@ -74,9 +74,9 @@ dsh plugin --profile web add dsh-session-shift
 
 装完**重启对应的那一端**——bundle 列表只在启动时读一次。其余：
 
-- npm 包名是 `dsh-session-shift`
+- **从 GitHub 装**：`add github:easerlee/dsh-session-shift`。更新只走 GitHub Release，npm 那条线已停用
+- npm 上停在 `0.2.5`，不再发新版本；`add dsh-session-shift` 装到的就是 0.2.5
 - 一条命令会同时把包写进 profile 的 `dependencies` 和 `dsh.profile.bundles`，不用手动改文件
-- 不走 npm 也行：`add github:easerlee/dsh-session-shift`（同样的代码，只是每次装都拉仓库）
 
 确认挂上了（web 端 / 命令行）：
 
