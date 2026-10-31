@@ -203,6 +203,17 @@ In the profile's `cordis.patch.yml`:
 
 ⚠️ A patch `config` **replaces the whole block** — when overriding, repeat every key you don't want to change.
 
+## Permissions and bounds
+
+| Scanner signal | Actual behaviour |
+|---|---|
+| files | **Writes only, never reads**: one `.dsh/handoff/<stamp>-<session-id>.md` per handoff, plus `handoff-client-report.json` from the client. Session files on disk are not read; events come from the host |
+| network | **Local endpoints only**: `/api/handoff/run`, `/api/handoff/status`, `/api/handoff/client`. No outbound requests — the client's two `fetch` calls hit those same local paths |
+| credentials | **None**: `token` in the source is text tokenization (`tokenize`); no token or credential is read or written, `~/.npmrc` and environment variables are never touched |
+
+Dependencies: only the host-injected peers (`@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-tools`); no third-party runtime packages.
+Compatibility: `engines.node >= 20`, `engines.dsh >= 0.2.0-0 < 0.3.0` (runs on 0.2.1-rc.5).
+
 The assistant-message section has no count setting of its own: it takes whatever budget is left after the
 user-message section and fills it **from the newest backwards**, each message capped at 600 chars. When the
 budget runs out, the *older* messages are the ones dropped; the newest is always there (it is the

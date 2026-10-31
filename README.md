@@ -188,6 +188,17 @@ curl http://127.0.0.1:<端口>/api/handoff/status
 
 ⚠️ patch 的 `config` 是**整段替换**，覆盖时必须把不想改的键一起写上。
 
+## 权限与边界
+
+| 扫描信号 | 实际行为 |
+|---|---|
+| files | **只写不读**：每次交接写一份 `.dsh/handoff/<时间戳>-<会话id>.md`，客户端写 `handoff-client-report.json`。磁盘上的会话文件不读，会话事件由宿主提供 |
+| network | **只挂本地接口**：`/api/handoff/run`、`/api/handoff/status`、`/api/handoff/client`。不发外部请求，客户端那两处 `fetch` 打的就是这三个本地路径 |
+| credentials | **不涉及**：源码里的 `token` 是文本分词用的（`tokenize`），不读不写任何 token 或凭据，`~/.npmrc` 与环境变量一律不碰 |
+
+依赖：运行期只有宿主注入的 peer（`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools`），没有第三方包。
+兼容：`engines.node >= 20`，`engines.dsh >= 0.2.0-0 < 0.3.0`（在 0.2.1-rc.5 上运行）。
+
 助手消息段没有单独的条数配置：它吃用户消息段之后剩下的预算，**从最新往回填**，每条最多 600 字；
 预算不够时丢掉的永远是更早的消息，最新的那条一定在（它就是「停在哪儿」）。
 

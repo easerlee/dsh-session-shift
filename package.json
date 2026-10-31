@@ -1,6 +1,10 @@
 {
   "name": "dsh-session-shift",
-  "version": "0.2.5",
+  "version": "0.2.6",
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-0 <0.3.0"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
