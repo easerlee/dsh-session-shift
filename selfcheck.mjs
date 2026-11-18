@@ -17,7 +17,7 @@
  *   cmd /c rmdir "<profile 目录>\node_modules\dsh-session-shift"
  *   dsh plugin --profile <profile> add <新的装法>
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -356,6 +356,42 @@ try {
   }
   await stopCase('session-live-turn', 300, false, '刚起的一轮')
   await stopCase('session-stale-turn', 10 * 60 * 1000, true, '拖了很久的一轮')
+  // ⑥ 上游因图片太多拒绝 → 自动交接；⑦ 上一轮正常结束 → 不触发
+  const imageCase = async (lastTurn, wantCreated, label) => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-session-shift-image-'))
+    let created = 0
+    let preStep = null
+    const ctx = {
+      logger: { info() {}, warn() {}, error() {} },
+      connection: { fetch: { register() {} } },
+      tools: { register() {} },
+      parallel: async () => {},
+      on(name, fn) { if (name === 'agent/pre-step') preStep = fn },
+      sessionTitle: { get: () => 'codex额度工具', rename() {} },
+      sessionProjections: { stateOf: () => ({ surfaceTokens: 10, contextWindow: 1000 }) },
+      agentPresets: { resolve: async () => ({ id: 'default' }), mount: async () => {} },
+      permissionPresets: { defaultPreset: '', resolve() {}, set() {} },
+      agentDefaultModel: { currentSelection: () => undefined },
+      workspaceRegistry: { create: async (cwd) => ({ path: cwd, attachSession: async () => {}, detachSession: async () => {} }) },
+      agents: { create: async () => { created += 1; return { agent: { session: { id: 'session-image-new' }, followup() {} }, dispose: async () => {} } } },
+    }
+    const session = { id: 'session-image-case', snapshotEvents: () => [lastTurn] }
+    await mod.apply(ctx, { enabled: true, maxCompactions: 2, thresholdRatio: 0.99, handoffDir: dir, cooldownMs: 0 })
+    if (!preStep) throw new Error(label + '：apply 没挂 agent/pre-step')
+    await preStep({ agent: { session }, signal: { aborted: false } }, async () => {})
+    for (let i = 0; i < 60 && created < wantCreated; i += 1) await new Promise((r) => setTimeout(r, 50))
+    if (created !== wantCreated) throw new Error(label + '：建了 ' + created + ' 个新会话（应为 ' + wantCreated + '）')
+    return dir
+  }
+  const imageErrTurn = {
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'error', error: { message: '400: {"type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] Too many images in request: 48 > 30"}' } } },
+  }
+  const dirImg = await imageCase(imageErrTurn, 1, '上游图片超限')
+  const packText = readdirSync(dirImg).filter((f) => f.endsWith('.md')).map((f) => readFileSync(join(dirImg, f), 'utf8')).join('')
+  if (!packText.includes('图片 48 > 30')) throw new Error('交接包里没写图片超限的原因')
+  await imageCase({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }, 0, '上一轮正常结束')
+  console.log('图片超限 ok: 上游 400（Too many images 48 > 30）触发交接并写进包；正常结束不触发')
   console.log('交接标题 ok: 编号递增不叠括号（含时间戳式旧标题、空标题）；交接后已停老会话那一轮；刚起的一轮不叫停；被自动起名覆盖后写回一次且不再抢')
 
   // ── 终态要能跨重启：标题里已经有 [已交接] 的会话，重启后也不许再自动交接 ──

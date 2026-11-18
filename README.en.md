@@ -9,7 +9,7 @@ Long sessions degrade near the end (author's own observation: "thinking but not 
 summary. This plugin takes the other road: **open a new session and carry over a reviewable handoff
 package**, leaving the old session untouched.
 
-- Triggered by **real context pressure**, or by **how many times this session has been compacted** — not a guessed turn count
+- Triggered by **real context pressure**, by **how many times this session has been compacted** — not a guessed turn count — or when **the upstream rejects a request for carrying too many images** (that session can no longer send one, so a fresh session is the only way out)
 - The package is **extracted mechanically from the session itself** (files it touched, tools it used, the
   last few user and assistant messages, where the last message stopped) and written to disk for review
 - `handoff_now` tool in the desktop app (with a `dryRun` mode) / HTTP endpoints for `dsh web` and the CLI
@@ -22,7 +22,7 @@ Several other plugins carry a similar name (`dsh-session-handoff` and friends). 
 
 | | Trigger | What gets handed over | Old session |
 |---|---|---|---|
-| **This plugin** | **Automatic**: context pressure hits the threshold, or the session has been compacted the maximum number of times (default 2) | **The original text, extracted mechanically** — files touched / tools used / last few messages / where it stopped. **No model involved** | Only renamed with ` [已交接]`; text untouched |
+| **This plugin** | **Automatic**: context pressure hits the threshold, the session has been compacted the maximum number of times (default 2), or the upstream rejects a request for too many images | **The original text, extracted mechanically** — files touched / tools used / last few messages / where it stopped. **No model involved** | Only renamed with ` [已交接]`; text untouched |
 | `WeiYe6/dsh-session-handoff` | Manual `/handoff` | **Model-generated** summary | New session with the summary injected |
 | `snow-The/dsh-session-handoff` | Manual export / resume | Structured handoff doc + context pruning | — |
 
